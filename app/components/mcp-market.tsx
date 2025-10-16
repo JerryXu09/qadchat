@@ -89,8 +89,6 @@ export function McpMarketPage() {
     return () => clearInterval(timer);
   }, [config]);
 
-  // 不再加载内置预设服务器，完全由用户自定义
-
   // 加载初始状态
   useEffect(() => {
     const loadInitialState = async () => {

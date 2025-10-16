@@ -2226,9 +2226,8 @@ export function Settings() {
               );
               config.update((config) => {
                 config.modelConfig.model = model as any;
-                config.modelConfig.providerName = normalizeProviderName(
-                  providerName!,
-                );
+                // 保留原始 provider 标识（支持 custom_ 前缀），避免丢失自定义服务商
+                config.modelConfig.providerName = providerName! as any;
                 // 根据新模型自动更新压缩阈值
                 const autoThreshold = getModelCompressThreshold(model);
                 config.modelConfig.compressMessageLengthThreshold =

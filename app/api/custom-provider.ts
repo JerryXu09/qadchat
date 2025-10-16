@@ -63,21 +63,56 @@ export async function handle(
     modifiedHeaders.set("x-custom-provider-endpoint", customConfig.endpoint);
   }
 
+  // 按目标服务商类型改写 URL 前缀，便于下游 handler 使用统一的路径解析逻辑
+  let targetPrefix = "/api/openai";
+  switch (customConfig.type) {
+    case "google":
+      targetPrefix = "/api/google";
+      break;
+    case "anthropic":
+      targetPrefix = "/api/anthropic";
+      break;
+    case "openai":
+    default:
+      targetPrefix = "/api/openai";
+  }
+
+  const urlObj = new URL(req.url);
+  // 当前路径示例：/api/custom_xxx/<type>/... 需要替换为 /api/<type>/...
+  const segments = urlObj.pathname.split("/").filter(Boolean);
+  // 期望结构：["api","custom_xxx","<type>", ...]
+  if (segments.length >= 3 && segments[0] === "api") {
+    // 将前两个片段 ["api","custom_xxx"] 替换为目标前缀 ["api","openai|google|anthropic"]
+    const rest = segments.slice(2).join("/");
+    urlObj.pathname = `${targetPrefix}/${rest}`;
+  }
+
   // 创建修改后的请求
-  const modifiedReq = new NextRequest(req.url, {
+  const modifiedReq = new NextRequest(urlObj.toString(), {
     method: req.method,
     headers: modifiedHeaders,
     body: req.body,
   });
 
+  // 修正下游 handler 的 params.path：去掉首段 <type>
+  const originalPath = params.path || [];
+  const strippedPath =
+    originalPath.length > 0 && originalPath[0] === customConfig.type
+      ? originalPath.slice(1)
+      : originalPath;
+  const nextParams = { ...params, path: strippedPath } as {
+    provider: string;
+    path: string[];
+  };
+
   // 根据自定义服务商类型路由到相应的处理器
   switch (customConfig.type) {
     case "openai":
-      return openaiHandler(modifiedReq, { params });
+      return openaiHandler(modifiedReq, { params: nextParams });
     case "google":
-      return googleHandler(modifiedReq, { params });
+      return googleHandler(modifiedReq, { params: nextParams });
     case "anthropic":
-      return anthropicHandler(modifiedReq, { params });
+      return anthropicHandler(modifiedReq, { params: nextParams });
     default:
       return NextResponse.json(
         { error: `Unsupported custom provider type: ${customConfig.type}` },

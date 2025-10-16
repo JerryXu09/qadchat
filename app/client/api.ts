@@ -441,5 +441,3 @@ export function normalizeProviderName(provider: string): ServiceProvider {
   // 默认返回OpenAI
   return ServiceProvider.OpenAI;
 }
-
-// 自定义服务商现在直接使用内置的API，不再需要CustomProviderApi

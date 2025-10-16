@@ -25,8 +25,10 @@ function parseApiKey(bearToken: string) {
 export function auth(req: NextRequest, modelProvider: ModelProvider) {
   const authToken = req.headers.get("Authorization") ?? "";
   const xGoogApiKey = req.headers.get("x-goog-api-key") ?? "";
+  const xApiKey = req.headers.get("x-api-key") ?? ""; // Anthropics style
+  const xCustomApiKey = req.headers.get("x-custom-provider-api-key") ?? ""; // 自定义服务商兜底
 
-  // check if it is openai api key or user token
+  // check if it is openai api key or user token (Authorization header)
   const { accessCode, apiKey } = parseApiKey(authToken);
 
   console.log("[User IP] ", getIP(req));
@@ -71,9 +73,24 @@ export function auth(req: NextRequest, modelProvider: ModelProvider) {
     }
   }
 
-  // 对于Google，检查x-goog-api-key头部
-  const finalApiKey =
-    modelProvider === ModelProvider.GeminiPro ? xGoogApiKey || apiKey : apiKey;
+  // 根据提供商选择用户提供的 API Key 来源
+  let userApiKey = "";
+  switch (modelProvider) {
+    case ModelProvider.GeminiPro:
+      // Google 使用 x-goog-api-key，如果没带则回落到 Authorization
+      userApiKey = xGoogApiKey || apiKey || xCustomApiKey;
+      break;
+    case ModelProvider.Claude:
+      // Anthropic 支持 x-api-key，也可从 Authorization 读取 Bearer，或兜底使用自定义头
+      userApiKey = xApiKey || apiKey || xCustomApiKey;
+      break;
+    default:
+      // 其它默认走 Authorization，兜底使用自定义头
+      userApiKey = apiKey || xCustomApiKey;
+      break;
+  }
+
+  const finalApiKey = userApiKey;
 
   // 如果有有效的访问码和服务器端API密钥，允许通过
   if (hasValidAccessCode && serverApiKey) {

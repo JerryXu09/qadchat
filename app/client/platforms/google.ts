@@ -141,7 +141,8 @@ export class GoogleApi implements LLMApi {
       // 5) 头部（决定使用 x-goog-api-key 或 nk- 访问码）
       const headers = getHeaders(false, {
         model: options.config.model,
-        providerName: ServiceProvider.Google,
+        // 使用会话/调用方传入的 providerName，支持自定义服务商
+        providerName: options.config.providerName,
       });
       // 6) 使用统一流式工具处理 + 思考模式
 
@@ -201,6 +202,7 @@ export class GoogleApi implements LLMApi {
       const res = await fetch(listPath, {
         method: "GET",
         headers: getHeaders(false, {
+          // models() 默认用于内置 Google；自定义服务商的模型获取已在 ModelFetcher 中覆盖
           providerName: ServiceProvider.Google,
           model: "",
         }),

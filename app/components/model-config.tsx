@@ -116,7 +116,8 @@ export function ModelConfigList(props: {
               );
               props.updateConfig((config) => {
                 config.model = ModalConfigValidator.model(model);
-                config.providerName = normalizeProviderName(providerName!);
+                // 保留原始 provider 标识（支持 custom_ 前缀），避免丢失自定义服务商上下文
+                config.providerName = providerName! as any;
 
                 // 检查新模型是否支持thinking功能，如果支持且thinkingBudget未设置，则设置默认值
                 const modelCapabilities = getModelCapabilitiesWithCustomConfig(

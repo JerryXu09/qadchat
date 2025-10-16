@@ -6,11 +6,29 @@ import { getModelProvider } from "../utils/model";
 export async function requestOpenai(
   req: NextRequest,
   useServerConfig?: boolean,
+  subpath?: string,
 ) {
   const controller = new AbortController();
 
   var authValue,
     authHeaderName = "";
+
+  // 解析自定义服务商配置（如有）
+  let customEndpoint = req.headers.get("x-custom-provider-endpoint") || "";
+  let customApiKey = req.headers.get("x-custom-provider-api-key") || "";
+  const customConfigHeader = req.headers.get("x-custom-provider-config");
+  if (!customEndpoint && customConfigHeader) {
+    try {
+      const decoded = atob(customConfigHeader);
+      const uint8Array = new Uint8Array(
+        decoded.split("").map((c) => c.charCodeAt(0)),
+      );
+      const json = new TextDecoder().decode(uint8Array);
+      const cfg = JSON.parse(json || "{}");
+      customEndpoint = cfg?.endpoint || customEndpoint;
+      customApiKey = cfg?.apiKey || customApiKey;
+    } catch {}
+  }
 
   // 如果使用服务器配置，使用服务器端的API密钥
   if (useServerConfig) {
@@ -21,11 +39,22 @@ export async function requestOpenai(
     authHeaderName = "Authorization";
   }
 
-  let path = `${req.nextUrl.pathname}`.replaceAll("/api/openai/", "");
+  // 计算请求路径：优先使用路由参数传入的 subpath，其次从 URL 中截取
+  let path =
+    subpath ?? `${req.nextUrl.pathname}`.replaceAll("/api/openai/", "");
+  // 当通过自定义服务商转发时，URL 可能类似 /api/custom_xxx/openai/...
+  if (!subpath && path.startsWith("/api/custom_")) {
+    const idx = path.indexOf("/openai/");
+    if (idx >= 0) {
+      path = path.slice(idx + "/openai/".length);
+    }
+  }
 
-  let baseUrl = useServerConfig
-    ? process.env.OPENAI_BASE_URL || OPENAI_BASE_URL
-    : OPENAI_BASE_URL;
+  let baseUrl = customEndpoint
+    ? customEndpoint
+    : useServerConfig
+      ? process.env.OPENAI_BASE_URL || OPENAI_BASE_URL
+      : OPENAI_BASE_URL;
 
   if (!baseUrl.startsWith("http")) {
     baseUrl = `https://${baseUrl}`;

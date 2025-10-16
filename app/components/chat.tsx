@@ -1598,9 +1598,8 @@ export function ChatActions(props: {
               const [model, providerId] = getModelProvider(selectedValue);
               chatStore.updateTargetSession(session, (session) => {
                 session.mask.modelConfig.model = model as ModelType;
-                session.mask.modelConfig.providerName = normalizeProviderName(
-                  providerId!,
-                );
+                // 直接保存 providerId（支持 custom_ 前缀），避免被标准化为内置服务商
+                session.mask.modelConfig.providerName = providerId! as any;
                 session.mask.syncGlobalConfig = false;
 
                 // 检查新模型是否支持thinking功能，如果支持且thinkingBudget未设置，则设置默认值

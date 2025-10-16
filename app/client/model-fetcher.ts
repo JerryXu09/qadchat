@@ -1,4 +1,4 @@
-import { ServiceProvider } from "../constant";
+import { ServiceProvider, DEFAULT_MODELS } from "../constant";
 import { useAccessStore } from "../store/access";
 import { LLMModel } from "./api";
 import { getHeaders, getClientApi } from "./api";
@@ -275,23 +275,96 @@ export class ModelFetcher {
   private static async fetchCustomProviderModels(
     customProvider: any,
   ): Promise<ModelFetchResponse> {
-    // 根据自定义服务商的类型调用相应的方法
-    switch (customProvider.type) {
-      case "openai":
-        return await this.fetchOpenAIModels(ServiceProvider.OpenAI);
+    try {
+      // 自定义服务商需携带其配置头部，强制覆盖 getHeaders 的模型配置
+      const providerId = customProvider.id as string;
 
-      case "anthropic":
-        return await this.fetchAnthropicModels();
+      if (customProvider.type === "openai") {
+        const res = await fetch(`/api/openai/v1/models`, {
+          method: "GET",
+          headers: getHeaders(false, {
+            providerName: providerId, // 关键：让 getHeaders 注入 x-custom-provider-config 与正确的鉴权头
+            model: "",
+          }),
+        } as any);
 
-      case "google":
-        return await this.fetchGoogleModels();
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`HTTP ${res.status} ${res.statusText}: ${err}`);
+        }
 
-      default:
-        return {
-          models: [],
-          success: false,
-          error: `不支持的自定义服务商类型: ${customProvider.type}`,
-        };
+        const data = (await res.json()) as OpenAIModelResponse;
+        const list = (data?.data ?? []).map((m) => ({
+          name: m.id,
+          available: true,
+          provider: {
+            id: providerId,
+            providerName: providerId,
+            providerType: "openai",
+            sorted: 1,
+          },
+          sorted: 1,
+        })) as LLMModel[];
+
+        return { models: list, success: true };
+      }
+
+      if (customProvider.type === "google") {
+        const res = await fetch(`/api/google/v1beta/models`, {
+          method: "GET",
+          headers: getHeaders(false, {
+            providerName: providerId,
+            model: "",
+          }),
+        } as any);
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`HTTP ${res.status} ${res.statusText}: ${err}`);
+        }
+        const data = (await res.json()) as any;
+        const arr: any[] = data?.models || [];
+        const models: LLMModel[] = arr.map((m) => ({
+          name: String(m.name).replace(/^models\//, ""),
+          displayName: m.displayName,
+          available: true,
+          provider: {
+            id: providerId,
+            providerName: providerId,
+            providerType: "google",
+            sorted: 1,
+          },
+          sorted: 1,
+          contextTokens: m.inputTokenLimit,
+        }));
+        return { models, success: true };
+      }
+
+      if (customProvider.type === "anthropic") {
+        // Anthropic 暂无标准的 models 列表接口；退化为默认内置列表
+        const models: LLMModel[] = (DEFAULT_MODELS || [])
+          .filter(
+            (m: any) => m?.provider?.providerName === ServiceProvider.Anthropic,
+          )
+          .map((m: any) => ({
+            ...m,
+            provider: {
+              ...(m.provider || {}),
+              id: providerId,
+              providerName: providerId,
+              providerType: "anthropic",
+            },
+          }));
+        return { models, success: true };
+      }
+
+      return {
+        models: [],
+        success: false,
+        error: `不支持的自定义服务商类型: ${customProvider.type}`,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { models: [], success: false, error: message };
     }
   }
 }

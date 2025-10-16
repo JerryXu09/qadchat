@@ -45,7 +45,7 @@ export async function handle(
   }
 
   try {
-    const response = await request(req, authResult.useServerConfig);
+    const response = await request(req, authResult.useServerConfig, subpath);
     return response;
   } catch (e) {
     console.error("[Anthropic] ", e);
@@ -53,11 +53,32 @@ export async function handle(
   }
 }
 
-async function request(req: NextRequest, useServerConfig?: boolean) {
+async function request(
+  req: NextRequest,
+  useServerConfig?: boolean,
+  subpath?: string,
+) {
   const controller = new AbortController();
 
   let authHeaderName = "x-api-key";
   let authValue = "";
+
+  // 解析自定义服务商配置（如有）
+  const configHeader = req.headers.get("x-custom-provider-config");
+  let customEndpoint = req.headers.get("x-custom-provider-endpoint") || "";
+  let customApiKey = req.headers.get("x-custom-provider-api-key") || "";
+  if (!customEndpoint && configHeader) {
+    try {
+      const decoded = atob(configHeader);
+      const uint8Array = new Uint8Array(
+        decoded.split("").map((c) => c.charCodeAt(0)),
+      );
+      const json = new TextDecoder().decode(uint8Array);
+      const cfg = JSON.parse(json || "{}");
+      customEndpoint = cfg?.endpoint || customEndpoint;
+      customApiKey = cfg?.apiKey || customApiKey;
+    } catch {}
+  }
 
   if (useServerConfig) {
     authValue = process.env.ANTHROPIC_API_KEY || "";
@@ -68,11 +89,21 @@ async function request(req: NextRequest, useServerConfig?: boolean) {
       "";
   }
 
-  let path = `${req.nextUrl.pathname}`.replaceAll(ApiPath.Anthropic, "");
+  // 计算路径：优先使用路由参数传入的 subpath，其次从 URL 中截取
+  let path =
+    subpath ?? `${req.nextUrl.pathname}`.replaceAll(ApiPath.Anthropic, "");
+  if (!subpath && path.startsWith("/api/custom_")) {
+    const idx = path.indexOf("/anthropic/");
+    if (idx >= 0) {
+      path = path.slice(idx + "/anthropic/".length);
+    }
+  }
 
-  let baseUrl = useServerConfig
-    ? process.env.ANTHROPIC_BASE_URL || ANTHROPIC_BASE_URL
-    : ANTHROPIC_BASE_URL;
+  let baseUrl = customEndpoint
+    ? customEndpoint
+    : useServerConfig
+      ? process.env.ANTHROPIC_BASE_URL || ANTHROPIC_BASE_URL
+      : ANTHROPIC_BASE_URL;
 
   if (!baseUrl.startsWith("http")) {
     baseUrl = `https://${baseUrl}`;
@@ -93,6 +124,9 @@ async function request(req: NextRequest, useServerConfig?: boolean) {
   );
 
   // try rebuild url, when using cloudflare ai gateway in server
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
   const fetchUrl = cloudflareAIGatewayUrl(`${baseUrl}${path}`);
 
   const fetchOptions: RequestInit = {
