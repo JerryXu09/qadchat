@@ -10,11 +10,8 @@ import {
 } from "@/app/constant";
 import { useAccessStore, useAppConfig, useChatStore } from "@/app/store";
 import { getClientConfig } from "@/app/config/client";
-import {
-  getMessageImages,
-  getMessageTextContent,
-  getTimeoutMSByModel,
-} from "@/app/utils";
+import { getMessageTextContent, getTimeoutMSByModel } from "@/app/utils";
+import { preProcessImageContent } from "@/app/utils/chat";
 import { getModelCapabilitiesWithCustomConfig } from "@/app/config/model-capabilities";
 import { getModelTools } from "@/app/config/tools";
 import { ChatOptions, LLMApi, LLMModel, LLMUsage, getHeaders } from "../api";
@@ -53,23 +50,42 @@ export class GoogleApi implements LLMApi {
 
     try {
       // 1) 内容映射（user/model + parts[text/inline_data]）
-      const messages = options.messages
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => {
-          const text = getMessageTextContent(m);
-          const images = getMessageImages(m);
-          const parts: any[] = [];
-          if (text && text.trim()) parts.push({ text });
-          if (images?.length) {
-            for (const img of images) {
-              const [meta, data] = img.split(",");
-              const mimeType = meta.split(":")[1].split(";")[0];
-              parts.push({ inline_data: { mime_type: mimeType, data } });
-            }
-          }
-          return { role: m.role === "assistant" ? "model" : "user", parts };
-        })
-        .filter((m) => m.parts.length > 0);
+      const messages = (
+        await Promise.all(
+          options.messages
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map(async (m) => {
+              const parts: any[] = [];
+              // 文本
+              const text = getMessageTextContent(m);
+              if (text && text.trim()) parts.push({ text });
+
+              // 图片：统一预处理，将本地缓存(/api/cache/...)转为 data URL
+              const processed = await preProcessImageContent(m.content);
+              if (Array.isArray(processed)) {
+                for (const p of processed) {
+                  if (p.type === "image_url" && p.image_url?.url) {
+                    const url = p.image_url.url;
+                    if (url.startsWith("data:")) {
+                      const comma = url.indexOf(",");
+                      const meta = url.slice(0, comma);
+                      const data = url.slice(comma + 1);
+                      const mimeType = meta.split(":")[1].split(";")[0];
+                      if (data && mimeType) {
+                        parts.push({
+                          inline_data: { mime_type: mimeType, data },
+                        });
+                      }
+                    }
+                    // 非 data: 的 URL（例如 http/https）不直接传递，避免触发 Google API 校验错误
+                  }
+                }
+              }
+
+              return { role: m.role === "assistant" ? "model" : "user", parts };
+            }),
+        )
+      ).filter((m) => m.parts.length > 0);
 
       // 2) 生成/安全/工具配置
       const appConfig = useAppConfig.getState().modelConfig;
