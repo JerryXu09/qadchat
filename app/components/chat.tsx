@@ -2204,20 +2204,27 @@ function ChatInner() {
 
   // 获取当前显示的消息内容
   const getCurrentMessageContent = (message: ChatMessage): string => {
+    // 若消息没有版本，优先返回字符串；否则从多模态数组里提取文本
     if (!message.versions || message.versions.length < 1) {
-      return typeof message.content === "string" ? message.content : "";
+      return typeof message.content === "string"
+        ? message.content
+        : getMessageTextContent(message);
     }
 
     const currentIndex = message.currentVersionIndex ?? 0;
     if (currentIndex === message.versions.length) {
       // 显示最新版本（当前消息内容）
-      return typeof message.content === "string" ? message.content : "";
+      return typeof message.content === "string"
+        ? message.content
+        : getMessageTextContent(message);
     } else if (currentIndex >= 0 && currentIndex < message.versions.length) {
-      // 显示历史版本
+      // 显示历史版本（字符串）
       return message.versions[currentIndex];
     }
 
-    return typeof message.content === "string" ? message.content : "";
+    return typeof message.content === "string"
+      ? message.content
+      : getMessageTextContent(message);
   };
 
   const onPinMessage = (message: ChatMessage) => {
